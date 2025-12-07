@@ -8,7 +8,7 @@ from ota import status as ota_status
 
 
 print(f"Booting..")
-print("Disobey 2025 - is this it?")
+print("Disobey 2026")
 print(f"Version: {Version().version}")
 print(f"Build: {Version().build}")
 
