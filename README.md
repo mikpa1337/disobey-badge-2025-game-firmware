@@ -8,6 +8,7 @@ A MicroPython firmware project for electronic badges. This repository manages th
 
 - **Docker Desktop** installed and running
 - **VS Code** with the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+  - Check also other tools in listed in https://containers.dev/supporting
 
 ### Setup
 
