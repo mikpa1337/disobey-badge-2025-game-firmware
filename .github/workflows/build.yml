@@ -70,7 +70,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: micropython/mpy-cross/build
-          key: mpy-cross-${{ hashFiles('micropython/mpy-cross/**') }}
+          key: mpy-cross-${{ hashFiles('micropython/mpy-cross/**', 'micropython/py/**') }}
           restore-keys: |
             mpy-cross-
       
@@ -84,10 +84,10 @@ jobs:
           restore-keys: |
             build-
       
-      - name: Build mpy-cross (if not cached)
-        if: steps.cache-mpy-cross.outputs.cache-hit != 'true'
+      - name: Build mpy-cross
         run: |
           cd micropython/mpy-cross
+          # Always clean to ensure compatibility with current micropython version
           make clean
           make
       
