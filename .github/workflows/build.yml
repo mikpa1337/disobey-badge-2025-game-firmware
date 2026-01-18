@@ -21,13 +21,32 @@ jobs:
           submodules: recursive
           fetch-depth: 0
       
+      - name: Check if commit is tagged
+        id: check_tag
+        run: |
+          # If this is a branch push, check if this commit has a version tag
+          if [[ "${GITHUB_REF}" == refs/heads/* ]]; then
+            TAGS=$(git tag --points-at HEAD | grep -E '^v[0-9]' || true)
+            if [ -n "$TAGS" ]; then
+              echo "skip_build=true" >> $GITHUB_OUTPUT
+              echo "This commit has tags: $TAGS"
+              echo "Skipping build as tag push will handle it"
+            else
+              echo "skip_build=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "skip_build=false" >> $GITHUB_OUTPUT
+          fi
+      
       - name: Set up Python
+        if: steps.check_tag.outputs.skip_build != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
       
       - name: Install system dependencies
+        if: steps.check_tag.outputs.skip_build != 'true'
         run: |
           sudo apt-get update -y
           sudo apt-get install -y \
@@ -50,11 +69,13 @@ jobs:
             dfu-util
       
       - name: Install Python dependencies
+        if: steps.check_tag.outputs.skip_build != 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
       - name: Cache ESP-IDF
+        if: steps.check_tag.outputs.skip_build != 'true'
         id: cache-esp-idf
         uses: actions/cache@v4
         with:
@@ -66,6 +87,7 @@ jobs:
             esp-idf-
       
       - name: Cache mpy-cross
+        if: steps.check_tag.outputs.skip_build != 'true'
         id: cache-mpy-cross
         uses: actions/cache@v4
         with:
@@ -75,6 +97,7 @@ jobs:
             mpy-cross-
       
       - name: Cache build artifacts
+        if: steps.check_tag.outputs.skip_build != 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -85,6 +108,7 @@ jobs:
             build-
       
       - name: Build mpy-cross
+        if: steps.check_tag.outputs.skip_build != 'true'
         run: |
           cd micropython/mpy-cross
           # Always clean to ensure compatibility with current micropython version
@@ -92,15 +116,18 @@ jobs:
           make
       
       - name: Build firmware
+        if: steps.check_tag.outputs.skip_build != 'true'
         run: |
           make build_firmware
       
       - name: Copy additional firmware files
+        if: steps.check_tag.outputs.skip_build != 'true'
         run: |
           cp micropython/ports/esp32/build-ESP32_GENERIC_S3-DEVKITW2/firmware.bin dist/full_firmware.bin || true
           cp micropython/ports/esp32/build-ESP32_GENERIC_S3-DEVKITW2/micropython.bin dist/ota_firmware.bin || true
       
       - name: Upload firmware artifacts
+        if: steps.check_tag.outputs.skip_build != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: firmware-${{ github.sha }}
@@ -111,6 +138,7 @@ jobs:
           if-no-files-found: warn
       
       - name: Display build info
+        if: steps.check_tag.outputs.skip_build != 'true'
         run: |
           echo "=== Build Information ==="
           echo "Git SHA: $(git rev-parse --short HEAD)"
