@@ -25,13 +25,19 @@ class Flashy(Screen):
 
         # Writer for buttons (smaller font)
         self.wri_btn = CWriter(ssd, arial10, GREEN, BLACK, verbose=False)
-        
-        # Read nick from config 
+
+        # Read nick from config
         nick = Config.config.get("espnow", {}).get("nick", "ANONYMOUS")
 
-
         # Display nick
-        self.lbl_w = Label( self.wri_nick, 170 // 3 + 5, 2, 316, bdcolor=False, justify=Label.CENTRE, )
+        self.lbl_w = Label(
+            self.wri_nick,
+            170 // 3 + 5,
+            2,
+            316,
+            bdcolor=False,
+            justify=Label.CENTRE,
+        )
         self.lbl_w.value(nick)
 
         # Enable focus handling on buttons
@@ -43,7 +49,7 @@ class Flashy(Screen):
         self.np = NeoPixel(Pin(18), 10)
 
         # --- Mode state ---
-        self.mode = "blue" # default mode
+        self.mode = "blue"  # default mode
         self.running = True
 
         # --- Radio buttons ---
@@ -65,7 +71,7 @@ class Flashy(Screen):
                 height=30,
                 textcolor=WHITE,
                 fgcolor=GREEN,
-                **t
+                **t,
             )
 
             # Make the first button active as default
@@ -75,7 +81,6 @@ class Flashy(Screen):
                 first_button = False
 
             col += 100
-
 
     # Radio button callback
     def set_mode(self, button, mode):
@@ -132,3 +137,20 @@ class Flashy(Screen):
             self.np.write()
             idx += 1
             await asyncio.sleep(delay)
+
+
+def badge_game_config():
+    """
+    Configuration for Flashy app
+
+    Returns:
+        dict: Game configuration with con_id, title, screen_class, etc.
+    """
+    return {
+        "con_id": 5,
+        "title": "Flashy",
+        "screen_class": Flashy,
+        "screen_args": (),  # Connection passed separately by framework
+        "multiplayer": False,
+        "description": "Name tag with flashy LEDs",
+    }

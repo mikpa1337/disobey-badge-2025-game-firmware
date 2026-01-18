@@ -8,4 +8,5 @@ since os.listdir() doesn't work on the virtual .frozen filesystem.
 # List all game modules that should be discovered
 __all__ = [
     "reaction_solor_game",
+    "flashy",
 ]
