@@ -56,7 +56,7 @@ def start_badge():
     # set configured wifi channels
     sta.active(True)
     sta.config(channel=channel)
-    sta.config(txpower=10)
+    sta.config(txpower=20)
     e = aioespnow.AIOESPNow()
     e.active(True)
 
