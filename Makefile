@@ -155,3 +155,11 @@ release: bump_version
 	echo "To undo this release (if testing):" && \
 	echo "  git tag -d $$NEW_VERSION" && \
 	echo "  git reset --hard HEAD~1"
+
+clear_hw_test_status:
+	@echo "Removing .hw_tested_in_build from badge..."
+	@if [ -z "$$PORT" ]; then \
+		$(PYTHON) micropython/tools/mpremote/mpremote.py baud 460800 u0 rm :/.hw_tested_in_build; \
+	else \
+		$(PYTHON) micropython/tools/mpremote/mpremote.py baud 460800 connect $$PORT rm :/.hw_tested_in_build; \
+	fi
