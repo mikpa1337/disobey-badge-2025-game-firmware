@@ -257,10 +257,11 @@ class NowListener(object):
 
     __task = None
     __instance = None
+    __cleanup_task = None
     _sender_t = None
     connections = {}
     delivered = deque([], 5)
-    last_seen = BadgeAdrDict(max_size=20)
+    last_seen = BadgeAdrDict(max_size=20, stale_multiplier=2.6)
 
     update_event = asyncio.Event()
     conn_request = asyncio.Event()
@@ -280,6 +281,18 @@ class NowListener(object):
         # start sender task to eat the out_q
         if self._sender_t is None or self._sender_t.done():
             self._sender_t = asyncio.create_task(self._sender())
+
+    async def cleanup_task(self):
+        """Periodically cleanup stale badges from last_seen."""
+        try:
+            while True:
+                await asyncio.sleep(5)  # Check every 5 seconds
+                removed = NowListener.last_seen.cleanup_stale(Beacon.timeout)
+                if removed > 0:
+                    print(f"Cleaned up {removed} stale badge(s)")
+                    self.update_event.set()  # Notify UI to update
+        except Exception as e:
+            print(f"cleanup_task error: {e}")
 
     async def task(self):
         """
@@ -500,6 +513,7 @@ class NowListener(object):
         if not cls.__instance:
             cls.__instance = cls(espnow)
             cls.__task = asyncio.create_task(cls.__instance.task())
+            cls.__cleanup_task = asyncio.create_task(cls.__instance.cleanup_task())
             return cls.__task
 
     @classmethod

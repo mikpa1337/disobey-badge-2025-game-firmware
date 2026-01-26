@@ -223,8 +223,9 @@ null_badge_adr = BadgeAdr(b"\x00\x00\x00\x00\x00\x00", b"[none]", -1, 0)
 
 class BadgeAdrDict:
     # Dict like class for having fixed number of BadgeAdr instances with mac as key
-    def __init__(self, max_size):
+    def __init__(self, max_size, stale_multiplier=2.6):
         self.max_size = max_size
+        self.stale_multiplier = stale_multiplier  # Multiplier for beacon timeout (e.g., 2.6 * beacon_timeout)
         self.store = {}
         self.last_index = None
 
@@ -234,6 +235,31 @@ class BadgeAdrDict:
             oldest_key = min(self.store, key=lambda k: self.store[k].last_seen)
             # Remove that key from the store
             del self.store[oldest_key]
+    
+    def cleanup_stale(self, beacon_timeout):
+        """Remove badges that haven't been seen within stale_multiplier * beacon_timeout seconds.
+        
+        Args:
+            beacon_timeout: The beacon transmission interval in seconds
+        
+        Returns:
+            Number of stale badges removed
+        """
+        stale_timeout = self.stale_multiplier * beacon_timeout
+        current_time = time()
+        stale_keys = []
+        for key, badge in self.store.items():
+            if current_time - badge.last_seen > stale_timeout:
+                stale_keys.append(key)
+        
+        for key in stale_keys:
+            del self.store[key]
+        
+        # Update last_index if it was removed
+        if self.last_index not in self.store and self.store:
+            self.last_index = next(iter(self.store))
+        
+        return len(stale_keys)  # Return number of stale badges removed
 
     def __setitem__(self, key, value):
         if not isinstance(value, BadgeAdr):
@@ -279,7 +305,15 @@ class BadgeAdrDict:
         return self.store.keys()
 
     def latest(self):
-        return self.store[self.last_index]
+        # Handle case where last_index badge was removed (e.g., by cleanup_stale)
+        if self.last_index and self.last_index in self.store:
+            return self.store[self.last_index]
+        # Fallback: return any badge if store is not empty
+        if self.store:
+            self.last_index = next(iter(self.store))
+            return self.store[self.last_index]
+        # No badges available
+        return None
 
     def update_last_seen(self, key, last_seen):
         if key in self.store:

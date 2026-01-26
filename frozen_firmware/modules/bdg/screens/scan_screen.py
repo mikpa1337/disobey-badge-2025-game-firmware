@@ -3,13 +3,13 @@ import asyncio
 from bdg.msg import BadgeAdr, null_badge_adr
 from bdg.msg.connection import NowListener, Beacon
 from bdg.game_registry import get_registry
-from gui.core.colors import GREEN, BLACK, RED
+from bdg.widgets.hidden_active_widget import HiddenActiveWidget
+from gui.core.colors import GREEN, BLACK, RED, D_PINK
 from gui.core.ugui import Screen, ssd
 from gui.core.writer import CWriter
-from gui.fonts import font10
+from gui.fonts import font10, freesans20
 from gui.primitives import launch
 from gui.widgets.buttons import CloseButton
-from gui.widgets.dropdown import Dropdown
 from gui.widgets.label import Label
 from gui.widgets.listbox import Listbox, dolittle
 
@@ -88,55 +88,39 @@ class ScannerScreen(Screen):
         super().__init__()
         self.espnow = espnow
         self.update_task = None
-        self.sort = "last_seen"
-        self.wri = wri = CWriter(ssd, font10, GREEN, BLACK, verbose=False)
-        self.sorters = {
-            "last_seen": lambda a: a[2][0].last_seen,
-            "rssi": lambda a: a[2][0].rssi,
-            "mac": lambda a: a[2][0].mac,
-        }
+        self.max_badges = NowListener.last_seen.max_size
+        
+        # Title writer with freesans20 font
+        wri = CWriter(ssd, freesans20, GREEN, BLACK, verbose=False)
+        # Listbox writer with font10 and D_PINK
+        wri_pink = CWriter(ssd, font10, D_PINK, BLACK, verbose=False)
 
-        els = (
-            "last_seen",
-            "rssi",
-            "mac",
-        )
-        self.s_dropb = Dropdown(
+        # Title label centered at top
+        self.lbl_title = Label(
             wri,
-            40,
-            220,
-            elements=els,
-            dlines=5,  # Show 5 lines
-            bdcolor=GREEN,
-            callback=self.set_sort_cb,
-        )
-        self.s_dropb.textvalue(els[0])
-
-        self.elements = list()
-        self.append_list(null_badge_adr)
-        self.listbox = Listbox(
-            self.wri,
+            10,
             2,
+            316,
+            bdcolor=False,
+            justify=Label.CENTRE,
+        )
+        self.lbl_title.value(f"{self.max_badges} near badges")
+
+        # Initialize with placeholder
+        self.elements = [("No badges found, looking..", dolittle, (null_badge_adr,))]
+        self.listbox = Listbox(
+            wri_pink,
+            50,
             2,
             elements=self.elements,
             dlines=7,
-            bdcolor=RED,
+            bdcolor=D_PINK,
             value=1,
             also=Listbox.ON_LEAVE,
-            width=200,
+            width=316,
         )
 
-        CloseButton(self.wri)  # Quit the application
-
-    def set_sort_cb(self, label):
-        self.sort = label.textvalue()
-        # print(f"set_sort_cb: {self.sort=}")
-        try:
-            self.elements.sort(key=self.sorters[self.sort], reverse=True)
-        except Exception as e:
-            print(f"set_sort_cb: {e}")
-
-        self.listbox.update()
+        HiddenActiveWidget(wri_pink)  # Quit the application
 
     def cb(self, *args):
         # print(f"callback: {args}")
@@ -149,73 +133,52 @@ class ScannerScreen(Screen):
         if not self.update_task or self.update_task.done():
             self.update_task = self.reg_task(self.update_resuls_task(), True)
 
-    def append_list(self, badge_addr: BadgeAdr):
-
-        def is_competitive(badge_addr):
-            # TODO: if badge is competitive
-            # badge
-            return True
-
+    def rebuild_list(self):
+        """Rebuild the badge list from NowListener.last_seen."""
         comp = "C"
-
-        # todo: where to import dict_view? fix this to isinstance
-        if type(badge_addr).__name__ in (
-            "dict_view",
-            "list",
-        ):
-            #   print("got list")
-            for b in badge_addr:
-                self.append_list(b)
-            return
-
-        ##                  ([str, callback, args], [...)
-        if len(self.elements) > 20:
-            self.elements.pop(0)
-
-        for ui, el in enumerate(self.elements):
-            if el[2][0].mac == badge_addr.mac:
-                break
+        
+        # Get all current badges from NowListener
+        current_badges = list(NowListener.last_seen.values())
+        
+        # Clear the existing list (modifying in place)
+        self.elements.clear()
+        
+        if not current_badges:
+            # No badges found, show placeholder
+            self.elements.append(("No badges found, looking..", dolittle, (null_badge_adr,)))
         else:
-            if badge_addr is null_badge_adr:
-                self.elements.append(("-----", dolittle, (badge_addr,)))
-            else:
-                self.elements.append(
-                    (
-                        f"[{comp}] {badge_addr.nick} [{badge_addr.rssi}dBm]",
-                        self.cb,
-                        (badge_addr,),
-                    )
+            # Build new elements from current badges
+            new_elements = [
+                (
+                    f"[{comp}] {badge.nick} [{badge.rssi}dBm]",
+                    self.cb,
+                    (badge,),
                 )
-            ui = -1
-
-        if ui >= 0:
-            self.elements[ui] = (
-                f"[{comp}]{badge_addr.nick} [{badge_addr.rssi}dBm]",
-                self.cb,
-                (badge_addr,),
-            )
-
-        # sort based on user selection
-        self.elements.sort(key=self.sorters[self.sort], reverse=True)
-        # print(f'Badges: {self.elements=}')
+                for badge in current_badges
+            ]
+            # Sort alphabetically by nickname (case-insensitive)
+            new_elements.sort(key=lambda a: a[2][0].nick.lower())
+            
+            # Add sorted elements to the list
+            self.elements.extend(new_elements)
+        
+        # Update listbox display
         if hasattr(self, "listbox"):
             self.listbox.update()
 
     async def update_resuls_task(self):
         try:
-            print("update_resuls_task: start")
             NowListener.start(self.espnow)  # ensure scanner is running
             Beacon.suspend(False)  # ensure that we have beacon on
 
-            # initial update
-            self.append_list(NowListener.last_seen.values())
+            # initial update - rebuild entire list
+            self.rebuild_list()
 
-            # wait for changes
+            # wait for changes (both additions and removals)
             async for latest_badge in NowListener.updates():
-                self.append_list(latest_badge)
+                # Rebuild entire list on any change
+                # This handles both additions and removals (from cleanup_stale)
+                self.rebuild_list()
                 await asyncio.sleep(0)
-            print("update_resuls_task: no more updates")
         except Exception as e:
             print(f"update_resuls_task: {e}")
-        finally:
-            print("update_resuls_task: end")
