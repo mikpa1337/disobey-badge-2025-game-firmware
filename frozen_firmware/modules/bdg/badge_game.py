@@ -14,7 +14,7 @@ from bdg.game_registry import get_registry
 from gui.core.colors import GREEN, BLACK, D_PINK, WHITE, D_GREEN, D_RED
 from gui.core.ugui import Screen, ssd
 from gui.core.writer import CWriter
-from gui.fonts import arial35, freesans20, font10 as font10
+from gui.fonts import arial35, freesans20, font10
 from gui.primitives import launch
 from gui.widgets.buttons import Button, RECTANGLE
 from gui.widgets.label import Label

@@ -4,12 +4,11 @@ from bdg.msg import BadgeAdr, null_badge_adr
 from bdg.msg.connection import NowListener, Beacon
 from bdg.game_registry import get_registry
 from bdg.widgets.hidden_active_widget import HiddenActiveWidget
-from gui.core.colors import GREEN, BLACK, RED, D_PINK
+from gui.core.colors import GREEN, BLACK, D_PINK
 from gui.core.ugui import Screen, ssd
 from gui.core.writer import CWriter
 from gui.fonts import font10, freesans20
 from gui.primitives import launch
-from gui.widgets.buttons import CloseButton
 from gui.widgets.label import Label
 from gui.widgets.listbox import Listbox, dolittle
 from bdg.screens.simple_list_screen import SimpleListScreen

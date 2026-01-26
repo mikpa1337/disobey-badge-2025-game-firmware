@@ -1,14 +1,10 @@
-import asyncio
-
-from bdg.game_registry import init_game_registry, get_registry
 from bdg.screens.solo_games_screen import SoloGamesScreen
 from gui.fonts import freesans20, font10
 from gui.core.colors import *
-from gui.core.ugui import Screen, ssd, quiet
+from gui.core.ugui import Screen, ssd
 from gui.core.writer import CWriter
-from bdg.utils import blit
 
-from gui.widgets import Label, Button, Listbox
+from gui.widgets import Label, Listbox
 from bdg.widgets.hidden_active_widget import HiddenActiveWidget
 from bdg.badge_game import GameLobbyScr
 from bdg.screens.ota import OTAScreen
@@ -57,38 +53,7 @@ class OptionScreen(Screen):
             also=Listbox.ON_LEAVE,
         )
 
-        HiddenActiveWidget(wri) 
-
-    def on_open(self):
-        # register callback that will make new connection dialog to pop up
-        pass
-
-    def on_hide(self):
-        # executed when any other window is opened on top
-        pass
-
-    def after_open(self):
-        self.show(True) 
-
-    async def update_sprite(self):
-        # example of using sprite
-        print(">>>> new update_sprite task")
-        x = self.sprite.col
-        y = self.sprite.row
-        t = 0.0
-        await asyncio.sleep(1)
-        self.sprite.visible = True
-        try:
-            while True:
-                self.sprite.update(
-                    y + int(cos(t) * 10.0),
-                    x + int(sin(t) * 20.0),
-                    True,
-                )
-                await asyncio.sleep_ms(50)
-                t += 0.3
-        except asyncio.CancelledError:
-            self.sprite.visible = False
+        HiddenActiveWidget(wri)
 
     def lbcb(self, lb):  # Listbox callback
         selected = lb.textvalue()
