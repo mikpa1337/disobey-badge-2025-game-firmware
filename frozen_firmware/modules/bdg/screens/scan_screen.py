@@ -12,90 +12,63 @@ from gui.primitives import launch
 from gui.widgets.buttons import CloseButton
 from gui.widgets.label import Label
 from gui.widgets.listbox import Listbox, dolittle
+from bdg.screens.simple_list_screen import SimpleListScreen
 
 
-class MultiplayerGameSelectionScreen(Screen):
-    def __init__(
-        self,
-        badge_addr: BadgeAdr = null_badge_adr,
-    ):
+class MultiplayerGameSelectionScreen(SimpleListScreen):
+    """Screen for selecting multiplayer game with a badge"""
+    
+    def __init__(self, badge_addr: BadgeAdr = null_badge_adr):
         self.baddr = badge_addr
-
-        super().__init__()
         
-        # Title writer with freesans20 font
-        wri = CWriter(ssd, freesans20, GREEN, BLACK, verbose=False)
-        # Listbox writer with font10 and D_PINK
-        wri_pink = CWriter(ssd, font10, D_PINK, BLACK, verbose=False)
-        # Status label writer
-        wri_status = CWriter(ssd, font10, GREEN, BLACK, verbose=False)
-
-        # Title label centered at top
-        self.lbl_title = Label(
-            wri,
-            10,
-            2,
-            316,
-            bdcolor=False,
-            justify=Label.CENTRE,
+        # Load games before calling super
+        registry = get_registry()
+        self.games = registry.get_all_games()
+        
+        super().__init__(
+            title=f"Challenge: {badge_addr.nick}",
+            listbox_dlines=6,
         )
-        self.lbl_title.value(f"Challenge: {badge_addr.nick}")
-
-        # Status label for connection feedback
+    
+    def init_subclass(self, **kwargs):
+        """Add status label for connection feedback"""
+        wri_status = CWriter(ssd, font10, GREEN, BLACK, verbose=False)
         self.s_lbl = Label(
             wri_status, 35, 2, 316, bdcolor=False, justify=Label.CENTRE
         )
-
-        # Load games dynamically from registry
-        registry = get_registry()
-        self.games = registry.get_all_games()
-
-        # Build friendly game list from registered multiplayer games
-        self.els = [
-            game["title"] for game in self.games if game.get("multiplayer", False)
+    
+    def get_initial_elements(self):
+        """Return list of multiplayer game titles"""
+        games = [
+            game["title"] for game in self.games 
+            if game.get("multiplayer", False)
         ]
+        return games if games else None
+    
+    def get_empty_message(self):
+        """Message to show when no multiplayer games available"""
+        return "No multiplayer games available"
+    
+    def on_item_selected(self, listbox):
+        """Launch selected game"""
+        game_title = listbox.textvalue()
         
-        # Ensure we have at least one element for the listbox
-        if not self.els:
-            self.els = ["No multiplayer games available"]
-
-        self.lb = Listbox(
-            wri_pink,
-            50,
-            2,
-            elements=self.els,
-            dlines=6,
-            bdcolor=D_PINK,
-            value=1,
-            callback=self.lbcb,
-            also=Listbox.NOCB,
-            width=316,
-        )
-
-    async def launch_app(self, app_id):
-        # This function is needed to decouple sync / async with launch()
-        if not await NowListener.conn_req(self.baddr.mac, app_id):
-            self.s_lbl.value("Con failed!")
-
-    def lbcb(self, lb):  # Listbox callback
-        game_title = lb.textvalue()
-
-        # Find game by title
-        game_config = None
         for game in self.games:
             if game["title"] == game_title:
-                game_config = game
+                con_id = game["con_id"]
+                print(f"Connecting to {game_title} (con_id={con_id})")
+                self.s_lbl.value("Connecting...")
+                launch(self.launch_app, (con_id,))
                 break
-
-        if game_config:
-            con_id = game_config["con_id"]
-            print(f"Connecting to {game_title} (con_id={con_id})")
-            self.s_lbl.value("Connecting...")
-            launch(self.launch_app, (con_id,))
         else:
             print(f"Unknown game: {game_title}")
-
+        
         print("lbcb!!!")
+    
+    async def launch_app(self, app_id):
+        """Launch multiplayer game with connection"""
+        if not await NowListener.conn_req(self.baddr.mac, app_id):
+            self.s_lbl.value("Con failed!")
 
 
 class ScannerScreen(Screen):

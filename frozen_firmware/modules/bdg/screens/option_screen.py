@@ -96,8 +96,6 @@ class OptionScreen(Screen):
         if selected == "Home":
             Screen.change(GameLobbyScr)
         elif selected == "Firmware update":
-            # TODO: pass actual connection info (espnow and sta)
-
             Screen.change(
                 OTAScreen,
                 mode=Screen.STACK,
@@ -108,3 +106,5 @@ class OptionScreen(Screen):
                     "ota_config": Config.config["ota"],
                 },
             )
+        elif selected == "Solo games & apps":
+            Screen.change(SoloGamesScreen, mode=Screen.STACK)
