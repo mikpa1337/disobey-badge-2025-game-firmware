@@ -15,8 +15,8 @@ DIS_RED = create_color(13, 210, 0, 0)
 DIS_PINK = create_color(14, 240, 0, 240)
 # c: color, hc: highlight color
 GAME_BTN_COLORS = [
-    {"hc": GREEN, "c": LIGHTGREEN, "btn": "btn_select"},
-    {"hc": BLUE, "c": DARKBLUE, "btn": "btn_start"},
+    {"hc": GREEN, "c": LIGHTGREEN, "btn": "btn_start"},
+    {"hc": BLUE, "c": DARKBLUE, "btn": "btn_select"},
     {"hc": YELLOW, "c": DARKYELLOW, "btn": "btn_a"},
     {"hc": RED, "c": LIGHTRED, "btn": "btn_b"},
 ]
@@ -76,12 +76,11 @@ class GameWin(Exception):
         self.points = points
 
 
-class ReactionGameCasualEndScr(Screen):
+class ReactionGameEndScr(Screen):
     color_map[FOCUS] = DIS_PINK
 
-    def __init__(self, points: int, conn: Connection):
+    def __init__(self, points: int):
         super().__init__()
-        self.conn = conn
 
         wri_points = CWriter(ssd, arial35, WHITE, BLACK, verbose=False)
         lbl_points = Label(wri_points, 20, 0, 320, justify=Label.CENTRE)
@@ -93,10 +92,10 @@ class ReactionGameCasualEndScr(Screen):
 
         wri = CWriter(ssd, font10, DIS_PINK, BLACK, verbose=False)
 
-        Button(wri, 120, 40, width=100, height=24, text="Menu", callback=self.go_back)
         Button(
             wri, 120, 180, width=100, height=24, text="Restart", callback=self.restart
         )
+        Button(wri, 120, 40, width=100, height=24, text="Quit", callback=self.go_back)
 
     def go_back(self, *args):
         Screen.back()
@@ -105,7 +104,6 @@ class ReactionGameCasualEndScr(Screen):
         Screen.change(
             ReactionSoloGameScr,
             mode=Screen.REPLACE,
-            kwargs={"conn": self.conn, "casual": True},
         )
 
 
@@ -124,9 +122,7 @@ class ReactionSoloGameScr(Screen):
     # Game UI state
     gs = STATE_GAME_PAUSED
 
-    def __init__(self, conn: Connection, casual: bool = False):
-        self.conn: Connection = conn
-        self.casual = casual
+    def __init__(self):
         super().__init__()
         self.wri = CWriter(ssd, font10, GREEN, BLACK, verbose=False)
 
@@ -157,8 +153,8 @@ class ReactionSoloGameScr(Screen):
                 ("btn_a", ButAct.ACT_PRESS),
                 ("btn_b", ButAct.ACT_PRESS),
                 ("btn_b", ButAct.ACT_LONG),
-                ("btn_l", ButAct.ACT_PRESS),
-                ("btn_r", ButAct.ACT_PRESS),
+                ("btn_select", ButAct.ACT_PRESS),
+                ("btn_start", ButAct.ACT_PRESS),
             ]
         )
         self.be = ButtonEvents(ev_subset)
@@ -180,15 +176,10 @@ class ReactionSoloGameScr(Screen):
             Screen.back()
 
     def after_open(self):
-        if self.casual:
-            seed = random.randint(10_000, 100_000)
-        else:
-            # TODO: Exchange seed with other badge#
-            # self.seed = random.randint(10_000, 100_000) + other_badge_seed
-            seed = 1
+        seed = random.randint(10_000, 100_000)
 
         if not self.game:
-            self.game = RSoloGame(seed, 20)
+            self.game = RSoloGame(seed)
 
         if not self.gt or self.gt.done():
             self.gt = self.reg_task(self.cont_sqnc(), True)
@@ -217,7 +208,6 @@ class ReactionSoloGameScr(Screen):
         except GameOver as go:
             print("game over")
             self.gs = self.STATE_GAME_OVER
-            # self.lbl_result.value(text=f"{go.reason} p:{go.points}")
 
     async def btn_cb(self, btn_idx):
         print(f"game state: {self.gs} {btn_idx=}")
@@ -227,11 +217,8 @@ class ReactionSoloGameScr(Screen):
                 self.game.btn_press(btn_idx)
                 self.lbl_points.value(text=str(self.game.points()))
             except GameOver as go:
-                # self.lbl_result.value(text=f"Wrong! Your points: {go.points}")
                 await self.stop_game()
             except GameWin as go:
-                # self.lbl_result.value(
-                #    text=f"You won! Your points: {go.points}")
                 await self.stop_game()
 
     async def _highlight_off(self, btn_idx):
@@ -261,19 +248,19 @@ class ReactionSoloGameScr(Screen):
 
     async def stop_game(self):
         self.gs = self.STATE_GAME_OVER
+        print("STOP GAME")
 
-        if self.casual:
-            # Littel wait so that btn_b doesn't trigger anything on next screen
-            await asyncio.sleep_ms(200)
-            Screen.change(
-                ReactionGameCasualEndScr,
-                mode=Screen.REPLACE,
-                kwargs={"points": self.game.points(), "conn": self.conn},
-            )
+        # Little wait so that btn_b doesn't trigger anything on next screen
+        await asyncio.sleep_ms(200)
+        Screen.change(
+            ReactionGameEndScr,
+            mode=Screen.REPLACE,
+            kwargs={"points": self.game.points()},
+        )
 
 
 class RSoloGame:
-    def __init__(self, seed: int, size: int = 200):
+    def __init__(self, seed: int, size: int = 300):
         random.seed(seed)
 
         self.sqnc = [random.randint(0, 3) for _ in range(size)]

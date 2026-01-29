@@ -43,7 +43,7 @@ class SoloGamesScreen(SimpleListScreen):
                 print(f"  Launching {screen_class.__name__} with args={screen_args}")
                 Screen.change(
                     screen_class, 
-                    args=(None,) + screen_args, 
+                    args=screen_args, 
                     mode=Screen.STACK
                 )
                 break
