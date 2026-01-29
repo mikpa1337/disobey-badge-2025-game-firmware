@@ -47,7 +47,6 @@ class OptionScreen(Screen):
             width=316,
             elements=self.els,
             dlines=6,
-            value=1,
             bdcolor=D_PINK,
             callback=self.lbcb,
             also=Listbox.ON_LEAVE,
