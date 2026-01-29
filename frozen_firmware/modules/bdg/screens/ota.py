@@ -122,11 +122,21 @@ class OtaUpdater:
         self.available_version = None
         self.json = None
 
+    def _parse_version(self, version_str):
+        """Parse version string like 'v0.0.9' into tuple of ints (0, 0, 9)"""
+        # Strip leading 'v' if present
+        version_str = version_str.lstrip('v')
+        # Split by '.' and convert to integers
+        return tuple(int(x) for x in version_str.split('.'))
+
     def update_available(self):
         self.__download_version_json()
         self.available_version = self.json["latest"]
 
-        return self.available_version > self.current_version
+        current = self._parse_version(self.current_version)
+        available = self._parse_version(self.available_version)
+        
+        return available > current
 
     def update(self):
         self.__download_version_json()
