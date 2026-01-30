@@ -57,15 +57,49 @@ class BadgeMsg(object):
 
     @staticmethod
     def desrlz(dump) -> "BadgeMsg":
+        # Lightweight guards to avoid crashes and OOM from malformed or oversized payloads
+        MAX_MSG_BYTES = 4096
         try:
+            if not isinstance(dump, (bytes, bytearray)):
+                print("desrlz: non-bytes payload")
+                return None
+            if len(dump) > MAX_MSG_BYTES:
+                print("desrlz: oversized payload", len(dump))
+                return None
+
             d = umsgpack.loads(dump)
-            ctype, mid, rest = d["msg_type"],d["_id"], {k: v for k, v in d.items() if k not in ["msg_type", "_id"]}
-            #print(f"{ctype=} {mid=} {rest=}")
-            msg = BadgeMsg.__msg_type_reg.get(ctype)(**rest)
+
+            if not isinstance(d, dict):
+                print("desrlz: unpacked payload is not a dict")
+                return None
+
+            ctype = d.get("msg_type")
+            mid = d.get("_id")
+            if not isinstance(ctype, str) or not isinstance(mid, int):
+                print("desrlz: invalid header types", ctype, mid)
+                return None
+
+            rest = {k: v for k, v in d.items() if k not in ["msg_type", "_id"]}
+
+            ctor = BadgeMsg.__msg_type_reg.get(ctype)
+            if ctor is None:
+                print(f"desrlz: unknown msg_type {ctype}")
+                return None
+
+            try:
+                msg = ctor(**rest)
+            except TypeError as e:
+                print(f"desrlz: ctor TypeError for {ctype}: {e}")
+                return None
+            except Exception as e:
+                print(f"desrlz: ctor raised for {ctype}: {e}")
+                return None
+
             msg.__id = mid
             return msg
         except Exception as e:
-            print(f"Error deserializing msg: {e}, dump: {dump}")
+            h = dump[:32] if isinstance(dump, (bytes, bytearray)) else b""
+            print(f"Error deserializing msg: {e}, head={h.hex()}")
             return None
 
 

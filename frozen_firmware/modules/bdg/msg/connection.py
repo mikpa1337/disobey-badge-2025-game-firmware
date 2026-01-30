@@ -309,8 +309,21 @@ class NowListener(object):
             if rssi < -70:
                 continue
 
-            incm_msg = BadgeMsg.desrlz(msg)
-            print(f">>>{mac}:{incm_msg if incm_msg else msg}")
+            # Protect deserialization so a malformed message doesn't cancel the listener
+            try:
+                incm_msg = BadgeMsg.desrlz(msg)
+            except Exception as e:
+                mac_hex = ":".join(f"{byte:02x}" for byte in mac)
+                print(f"NowListener: fatal deserialization from {mac_hex}: {e}")
+                continue
+
+            if incm_msg is None:
+                mac_hex = ":".join(f"{byte:02x}" for byte in mac)
+                head = msg[:32] if isinstance(msg, (bytes, bytearray)) else b""
+                print(f"Ignoring malformed msg from {mac_hex} len={len(msg)} head={head.hex()}")
+                continue
+
+            print(f">>>{mac}:{incm_msg}")
 
             if isinstance(incm_msg, BeaconMsg):
                 NowListener.last_seen[mac] = BadgeAdr(mac, incm_msg.nick, rssi, time())
