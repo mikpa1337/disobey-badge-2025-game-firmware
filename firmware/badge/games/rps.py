@@ -281,24 +281,33 @@ class RpsScreen(Screen):
         self.round_label.value(f"Round {self.game.round_count}")
         self.update_score()
 
-        if self.game.scores["player"] >= 2 or self.game.scores["opponent"] >= 2:
-            side = self.game.determine_final_winner()
+        # Only reset for non-tie rounds if game not finished
+        if winner != "tie":
+            if self.game.scores["player"] >= 2 or self.game.scores["opponent"] >= 2:
+                side = self.game.determine_final_winner()
+                if side == "player":
+                    final_winner = Config.config["espnow"]["nick"]
+                elif side == "opponent":
+                    final_winner = self.opponent_nick or "Opponent"
+                else:
+                    final_winner = "tie"
 
-            if side == "player":
-                final_winner = Config.config["espnow"]["nick"]
-            elif side == "opponent":
-                final_winner = self.opponent_nick or "Opponent"
+                try:
+                    self.conn.send_app_msg(MatchOver(final_winner), sync=False)
+                except Exception as e:
+                    print("Failed to send MatchOver:", e)
+
+                self.display_final_winner(final_winner)
             else:
-                final_winner = "tie"
-
-            try:
-                self.conn.send_app_msg(MatchOver(final_winner), sync=False)
-            except Exception as e:
-                print("Failed to send MatchOver:", e)
-
-            self.display_final_winner(final_winner)
+                self.reset_round_state()
         else:
-            self.reset_round_state()
+            # Tie: allow players to pick again
+            self.my_weapon = None
+            self.their_weapon = None
+            self.round_resolved = False
+            self.ready_for_input = True
+            self.set_waiting_text()
+
 
     # -----------------------------
     # Final Winner Screens
