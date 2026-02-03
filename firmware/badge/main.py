@@ -23,7 +23,6 @@ from bdg.badge_game import start_game
 
 # from .sprite import Sprite
 # import sprite
-from badge.games.tictac import TicTacToe
 from .bleds import ScoreLeds
 from bdg.asyncbutton import ButtonEvents
 
