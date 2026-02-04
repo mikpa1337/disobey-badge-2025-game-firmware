@@ -393,6 +393,8 @@ For optimal development speed and safety, follow this workflow:
 
 ### Devkit Components
 
+Note: Our devkit had more memory than actual badge, if you have troubles to flash the badge, check this commit https://github.com/disobeyfi/micropython/commit/78680ea773f4f5e849983caad463b60d360de672 and updating flash size helps.
+
 Devkit parts for two "badges", each badge has:
 
 - One breadboard
