@@ -321,6 +321,9 @@ async def new_con_cb(conn, req=False):
     Handles an incoming connection request by presenting the user with a
     dialog box to accept or decline the connection.
 
+    Only shows dialog when in GameLobbyScr or OptionScreen.
+    Auto-declines when user is in other screens (games, etc).
+
     Handles self initiated connection if req=True
     """
     from bdg.msg.connection import Connection, NowListener
@@ -328,10 +331,24 @@ async def new_con_cb(conn, req=False):
     from bdg.screens.option_screen import OptionScreen
     from bdg.game_registry import get_registry
     from gui.core.writer import CWriter
-    from gui.core.ugui import ssd
+    from gui.core.ugui import ssd, Screen
     from bdg.widgets.custom_dialog import CustomDialogBox
     from gui.fonts import font10
     from gui.core.colors import GREEN, BLACK, RED
+
+    # Check if we're in an allowed screen for connection dialogs
+    if not req:  # Only check for incoming connections, not self-initiated
+        from bdg.badge_game import GameLobbyScr
+        from bdg.screens.scan_screen import ScannerScreen, MultiplayerGameSelectionScreen
+        from bdg.screens.solo_games_screen import SoloGamesScreen
+        
+        allowed_screens = (GameLobbyScr, OptionScreen, ScannerScreen, 
+                          SoloGamesScreen, MultiplayerGameSelectionScreen)
+        current = Screen.current_screen
+        
+        if not isinstance(current, allowed_screens):
+            print(f"Connection auto-declined: User busy in {current.__class__.__name__}")
+            return False  # Auto-decline
 
     accept = False
     if not req:
