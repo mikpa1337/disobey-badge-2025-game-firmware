@@ -1,4 +1,5 @@
 import asyncio
+
 from bdg.config import Config
 from bdg.msg import AppMsg, BadgeMsg
 from bdg.msg.connection import Connection, Beacon
@@ -10,10 +11,10 @@ from gui.fonts import font10
 import gui.fonts.arial10 as arial10
 from gui.core.colors import *
 
+
 # -----------------------------
 # Multiplayer Message Types
 # -----------------------------
-
 @AppMsg.register
 class RpsMove(BadgeMsg):
     def __init__(self, weapon=None):
@@ -38,7 +39,6 @@ class Nickname(BadgeMsg):
 # -----------------------------
 # Game Logic
 # -----------------------------
-
 class RpsGame:
     def __init__(self):
         self.win_descriptions = {
@@ -69,7 +69,6 @@ class RpsGame:
     def resolve_round(self, player_weapon, opponent_weapon):
         result, winner = self.determine_winner(player_weapon, opponent_weapon)
 
-        # Only count non-tie rounds
         if winner != "tie":
             self.round_count += 1
             self.scores[winner] += 1
@@ -85,7 +84,6 @@ class RpsGame:
         self.last_winner = winner
         return result, winner
 
-
     def determine_final_winner(self):
         if self.scores["player"] > self.scores["opponent"]:
             return "player"
@@ -97,21 +95,24 @@ class RpsGame:
 # -----------------------------
 # Main Game Screen
 # -----------------------------
-
 class RpsScreen(Screen):
     def __init__(self, conn: Connection):
         super().__init__()
         self.conn = conn
+
         self.ready_for_input = True
         self.opponent_nick = None
+
         self.my_weapon = None
         self.their_weapon = None
         self.round_resolved = False
+
+        self.remote_move_received_this_round = False
+        self.round_timeout_task = None
+
         self.game = RpsGame()
 
-        # -----------------
-        # GUI setup
-        # -----------------
+        # GUI
         self.wri = CWriter(ssd, font10, GREEN, BLACK, verbose=False)
         self.wribut = CWriter(ssd, arial10, GREEN, BLACK, verbose=False)
 
@@ -152,10 +153,11 @@ class RpsScreen(Screen):
         self.update_score()
 
     # -----------------------------
-    # Lifecycle / Connection
+    # Lifecycle
     # -----------------------------
     def on_open(self):
         Beacon.suspend(True)
+
         if self.conn and not hasattr(self.conn, "_rps_reader_started"):
             self.conn._rps_reader_started = True
             asyncio.create_task(self.read_messages())
@@ -163,11 +165,14 @@ class RpsScreen(Screen):
         my_nick = Config.config["espnow"]["nick"]
         try:
             self.conn.send_app_msg(Nickname(my_nick), sync=False)
-        except Exception as e:
-            print("Failed to send Nickname:", e)
+        except:
+            pass
 
     def on_hide(self):
         Beacon.suspend(False)
+        if self.round_timeout_task:
+            self.round_timeout_task.cancel()
+            self.round_timeout_task = None
 
     async def read_messages(self):
         while not self.conn or not self.conn.active:
@@ -176,32 +181,33 @@ class RpsScreen(Screen):
         async for msg in self.conn.get_msg_aiter():
             print("RPS RECEIVED:", msg.msg_type, msg.__dict__)
 
-            if msg.msg_type == "RpsMove":
+            if msg.msg_type == "ConTerm":
+                self.ready_for_input = False
+                if self.round_timeout_task:
+                    self.round_timeout_task.cancel()
+                from bdg.screens.scan_screen import ScannerScreen
+                Screen.change(ScannerScreen, mode=Screen.REPLACE)
+                return
+
+            if msg.msg_type == "Nickname":
+                self.opponent_nick = msg.nick or "Opponent"
+
+            elif msg.msg_type == "RpsMove":
                 self.handle_opponent_move(msg.weapon)
 
             elif msg.msg_type == "MatchOver":
                 self.display_final_winner_remote(msg.winner)
-
-            elif msg.msg_type == "Nickname":
-                self.opponent_nick = msg.nick or "Opponent"
-
-            elif msg.msg_type == "ConTerm":
-                from bdg.screens.scan_screen import ScannerScreen
-                Screen.change(ScannerScreen, mode=Screen.REPLACE)
-                return
 
     # -----------------------------
     # UI Helpers
     # -----------------------------
     def update_score(self):
         self.score_label.value(
-            f"You: {self.game.scores['player']} / "
-            f"Opponent: {self.game.scores['opponent']}"
+            f"You: {self.game.scores['player']} / Opponent: {self.game.scores['opponent']}"
         )
 
     def set_waiting_text(self):
         last = f"{self.game.last_result}. " if self.game.last_result else ""
-
         if self.my_weapon and not self.their_weapon:
             self.info.value(f"You chose {self.my_weapon}. Waiting for opponent.")
         elif self.their_weapon and not self.my_weapon:
@@ -213,6 +219,7 @@ class RpsScreen(Screen):
         self.my_weapon = None
         self.their_weapon = None
         self.round_resolved = False
+        self.remote_move_received_this_round = False
         self.ready_for_input = True
         self.set_waiting_text()
 
@@ -220,41 +227,65 @@ class RpsScreen(Screen):
     # Player Input
     # -----------------------------
     def play_round(self, button, player_weapon):
-        # Debounce: ignore if we already picked this round
+        if not self.conn or not self.conn.active:
+            self.info.value("Connection lost.")
+            return
+
         if self.my_weapon is not None:
             print("IGNORED duplicate LOCAL PICK")
             return
 
         if not self.ready_for_input or self.round_resolved:
-            print("IGNORED because not ready")
+            print("IGNORED LOCAL PICK (not ready)")
             return
 
-        print("LOCAL PICK:", player_weapon,
-            "ready_for_input=", self.ready_for_input,
-            "round_resolved=", self.round_resolved,
-            "my_weapon=", self.my_weapon,
-            "their_weapon=", self.their_weapon)
+        print("LOCAL PICK:", player_weapon)
 
         self.ready_for_input = False
         self.my_weapon = player_weapon
 
         try:
             self.conn.send_app_msg(RpsMove(player_weapon), sync=False)
-        except Exception as e:
-            print("Failed to send RpsMove:", e)
+        except:
+            self.info.value("Connection lost.")
+            return
 
         if self.their_weapon and not self.round_resolved:
             asyncio.create_task(self.resolve_round())
         else:
             self.set_waiting_text()
 
+        self.start_round_timeout()
+
+    def start_round_timeout(self):
+        if self.round_timeout_task:
+            self.round_timeout_task.cancel()
+
+        async def _timeout():
+            try:
+                await asyncio.sleep(6)
+                if self.my_weapon and not self.their_weapon and not self.round_resolved:
+                    self.info.value("No response. Round reset.")
+                    self.reset_round_state()
+            except asyncio.CancelledError:
+                pass
+
+        self.round_timeout_task = asyncio.create_task(_timeout())
+
     # -----------------------------
     # Opponent Move
     # -----------------------------
     def handle_opponent_move(self, weapon):
-        print("REMOTE PICK:", weapon, "round_resolved=", self.round_resolved,
-            "my_weapon=", self.my_weapon, "their_weapon=", self.their_weapon)
+        if not self.conn or not self.conn.active:
+            return
 
+        if self.remote_move_received_this_round:
+            print("IGNORED duplicate REMOTE PICK")
+            return
+
+        print("REMOTE PICK:", weapon)
+
+        self.remote_move_received_this_round = True
         self.their_weapon = weapon
 
         if self.my_weapon and not self.round_resolved:
@@ -263,48 +294,35 @@ class RpsScreen(Screen):
             self.set_waiting_text()
 
     # -----------------------------
-    # Round Resolution (ASYNC)
+    # Round Resolution
     # -----------------------------
     async def resolve_round(self):
         if not self.my_weapon or not self.their_weapon:
             return
 
-        result, winner = self.game.resolve_round(
-            self.my_weapon, self.their_weapon
-        )
+        result, winner = self.game.resolve_round(self.my_weapon, self.their_weapon)
         await self.apply_result(result, winner)
 
-    # -----------------------------
-    # Apply Result (ASYNC)
-    # -----------------------------
     async def apply_result(self, result, winner):
         self.round_resolved = True
+
+        if self.round_timeout_task:
+            self.round_timeout_task.cancel()
+            self.round_timeout_task = None
 
         if winner == "tie":
             text = "Tie. Pick again."
         elif winner == "player":
-            text = (
-                f"You: {self.my_weapon}, Opponent: {self.their_weapon}. "
-                f"{result}! You win!"
-            )
+            text = f"You: {self.my_weapon}, Opponent: {self.their_weapon}. {result}! You win!"
         else:
-            text = (
-                f"You: {self.my_weapon}, Opponent: {self.their_weapon}. "
-                f"{result}! You lose!"
-            )
+            text = f"You: {self.my_weapon}, Opponent: {self.their_weapon}. {result}! You lose!"
 
         self.info.value(text)
         self.round_label.value(f"Round {self.game.round_count}")
         self.update_score()
 
-        # -----------------------------
-        # Non‑tie logic
-        # -----------------------------
         if winner != "tie":
-            if (
-                self.game.scores["player"] >= 2
-                or self.game.scores["opponent"] >= 2
-            ):
+            if self.game.scores["player"] >= 2 or self.game.scores["opponent"] >= 2:
                 side = self.game.determine_final_winner()
 
                 if side == "player":
@@ -316,8 +334,8 @@ class RpsScreen(Screen):
 
                 try:
                     self.conn.send_app_msg(MatchOver(final_winner), sync=False)
-                except Exception as e:
-                    print("Failed to send MatchOver:", e)
+                except:
+                    pass
 
                 self.display_final_winner(final_winner)
             else:
@@ -325,12 +343,11 @@ class RpsScreen(Screen):
 
             return
 
-        # -----------------------------
-        # Tie logic (ASYNC DELAY)
-        # -----------------------------
+        # Tie
         self.my_weapon = None
         self.their_weapon = None
         self.round_resolved = False
+        self.remote_move_received_this_round = False
         self.ready_for_input = False
 
         await asyncio.sleep(0.5)
@@ -392,7 +409,6 @@ class RpsScreen(Screen):
 # -----------------------------
 # Game Registration
 # -----------------------------
-
 def badge_game_config():
     return {
         "con_id": 4,
