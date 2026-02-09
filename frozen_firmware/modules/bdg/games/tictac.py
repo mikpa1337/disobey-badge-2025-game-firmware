@@ -2,7 +2,7 @@ import asyncio
 import random
 import time
 
-from bdg.msg import AppMsg, BadgeMsg
+from bdg.msg import AppMsg, BadgeMsg, CancelActivityMsg
 from bdg.msg.connection import Connection, Beacon
 from bdg.widgets.meter import Meter
 from gui.core.colors import GREEN, BLACK, RED, YELLOW, MAGENTA, BLUE, DARKBLUE
@@ -195,6 +195,7 @@ class TicTacToe(Screen):
 
         self.set_player_label("??")
         self.conn: Connection = conn
+        self.cancelled = False
 
         self.update_board(self.g_state.to_dict())
 
@@ -209,12 +210,23 @@ class TicTacToe(Screen):
     def on_hide(self):
         # TODO: how to disallow back when in competitive mode?
         self.cancel_turn_timer()
-        if self.conn:
+        
+        if self.conn and not self.conn.closed:
+            # Send cancellation message if leaving early (not already cancelled by other badge)
+            if not self.cancelled:
+                try:
+                    msg = CancelActivityMsg()
+                    self.conn.send_app_msg(msg, sync=False)
+                    print("TicTacToe: Sent cancel to other badge")
+                except Exception as e:
+                    print(f"TicTacToe: Failed to send cancel: {e}")
+            
+            # Also send TttEnd to handle older versions gracefully
             try:
-                # Notify opponent that game ended due to leaving
                 self.conn.send_app_msg(TttEnd(False, -1), sync=False)
             except Exception as e:
                 print(f"Failed to send TttEnd: {e}")
+            
             asyncio.create_task(self.conn.terminate(send_out=True))
 
         Beacon.suspend(False)
@@ -253,6 +265,18 @@ class TicTacToe(Screen):
 
         async for msg in self.conn.get_msg_aiter():
             print(f"ttt -> {msg}")
+            
+            # Handle cancellation from other badge
+            if msg.msg_type == "CancelActivityMsg":
+                print("TicTacToe: Received cancel from other badge")
+                self.cancelled = True
+                self.cancel_turn_timer()
+                self.ui_state = GAME_OVER
+                self.set_info_label("Game cancelled by opponent", err=True)
+                await asyncio.sleep(1.5)
+                Screen.back()
+                return
+            
             if msg.msg_type == "TttStart":
 
                 if msg.init < self._init:

@@ -75,6 +75,7 @@ class Connection(object):
         self.closed = False
         self.last_msg = time()
         self.con_id = con_id
+        self.session_id = ticks_ms()  # unique session ID to prevent cross-session messages
         self.in_q = Queue(maxsize=5)
         self.out_q = Queue(maxsize=3)
 
@@ -97,7 +98,7 @@ class Connection(object):
 
     async def connect(self, rcvr=False):
         try:
-            oc = OpenConn(con_id=self.con_id)
+            oc = OpenConn(con_id=self.con_id, session_id=self.session_id)
             if rcvr:
                 self.send_msg(oc)
                 self.active = True
@@ -111,6 +112,9 @@ class Connection(object):
             ):
                 # print(f'not accepted reply: {type(reply)} {reply=}')
                 return await self.terminate(False)
+            # Store peer's session_id from their reply
+            if hasattr(reply, 'session_id') and reply.session_id:
+                self.session_id = reply.session_id
             # connection made
             self.active = True
             return True
@@ -150,9 +154,12 @@ class Connection(object):
                 print(f"connection {self.con_id} terminated")
         elif isinstance(msg, OpenConn):
             if not self.active:
+                # Store peer's session_id from their OpenConn
+                if hasattr(msg, 'session_id') and msg.session_id:
+                    self.session_id = msg.session_id
                 self.in_q.put_nowait(msg)
                 self.active = True
-                print(f"connection {self.con_id} activated")
+                print(f"connection {self.con_id} activated, session_id={self.session_id}")
             # self.send_msg(AckMsg(id=msg.id), retry=0)
         elif isinstance(msg, PingMsg):
             if msg.reply:
@@ -167,7 +174,7 @@ class Connection(object):
             self.in_q.put_nowait(msg)
 
     def send_app_msg(self, msg: BadgeMsg, sync=False):
-        amsg = AppMsg(con_id=self.con_id, content=msg)
+        amsg = AppMsg(con_id=self.con_id, content=msg, session_id=self.session_id)
         if self.closed:
             print(f"cannot send {self.con_id=} is terminated")
             return  # cannot send on closed connection
@@ -260,7 +267,7 @@ class NowListener(object):
     __cleanup_task = None
     _sender_t = None
     connections = {}
-    delivered = deque([], 5)
+    delivered = deque([], 50)  # Track last 50 messages to prevent re-delivery
     last_seen = BadgeAdrDict(max_size=20, stale_multiplier=2.6)
 
     update_event = asyncio.Event()
@@ -384,11 +391,29 @@ class NowListener(object):
 
             elif isinstance(incm_msg, OpenConn):
                 NowListener.last_seen.update_last_seen(mac, time())
-                if await self.dispatch_msg(incm_msg, incm_msg.con_id, mac):
-                    # we found an active connection for the message, this was a reply
-                    self.ack_msg(mac, incm_msg.id)
-                    # ack our own OpenConn msg
-                    continue
+                
+                # Check if there's an existing connection for this con_id and MAC
+                existing_conn = self.connections.get(incm_msg.con_id)
+                if existing_conn and not existing_conn.closed:
+                    # Check if this is from the same peer (reply to our connection request)
+                    if existing_conn.c_mac == mac:
+                        # This is a reply to our connection request, dispatch it
+                        if await self.dispatch_msg(incm_msg, incm_msg.con_id, mac):
+                            self.ack_msg(mac, incm_msg.id)
+                            continue
+                    else:
+                        # Existing connection with different peer - reject new one
+                        print(f"Rejecting OpenConn: con_id {incm_msg.con_id} already used by different peer")
+                        await send_message(
+                            self.__espnow, mac, 
+                            OpenConn(incm_msg.con_id, accept=False).srlz(), 
+                            sync=False
+                        )
+                        continue
+                elif existing_conn and existing_conn.closed:
+                    # Old closed connection still registered - clean it up
+                    print(f"Cleaning up closed connection for con_id={incm_msg.con_id}")
+                    NowListener.unregister_con(existing_conn)
 
                 # Add new incoming connection, ack the incoming OpenConn
                 await send_message(
@@ -397,6 +422,9 @@ class NowListener(object):
 
                 # proto connection, not yet capable of receiving other messages
                 conn = Connection(mac, incm_msg.con_id, self.__espnow)
+                # Use session_id from incoming OpenConn if available
+                if hasattr(incm_msg, 'session_id') and incm_msg.session_id:
+                    conn.session_id = incm_msg.session_id
                 conn.active = True
 
                 try:
@@ -412,8 +440,8 @@ class NowListener(object):
                 # connection accepted, register to allow subsequent messages
                 NowListener.register_con(conn)
                 await asyncio.sleep(0.1)  # Allow now esp stack to run
-                # Opening connection by replying OpenConn back with same msg id
-                oc = OpenConn(incm_msg.con_id, accept=True)
+                # Opening connection by replying OpenConn back with same msg id and session_id
+                oc = OpenConn(incm_msg.con_id, accept=True, session_id=conn.session_id)
                 oc.__id = incm_msg.id
                 NowListener.send_msg(oc, mac)
                 # await send_message(self.__espnow, mac, msg, sync=False)
@@ -560,6 +588,10 @@ class NowListener(object):
         if connection.con_id in cls.connections:
             print(f"unregister: {connection.con_id}")
             del cls.connections[connection.con_id]
+            # Note: We intentionally do NOT clean up the delivered deque here.
+            # Keeping old message IDs prevents stale messages (still in retry queues)
+            # from being re-delivered in new sessions. The deque's max size will
+            # naturally evict old entries over time.
 
     @classmethod
     def start(cls, espnow):
@@ -626,15 +658,31 @@ class NowListener(object):
             bool: True if the message was dispatched, False otherwise.
         """
         if con_id in self.connections:
-            if self.connections[con_id].c_mac != s_mac:
+            conn = self.connections[con_id]
+            if conn.c_mac != s_mac:
                 print(f"con_id mismatch {con_id=} {s_mac=}")
                 # TODO: send ConTerm for mismached
                 return False
 
+            # Validate session ID for AppMsg to prevent cross-session message routing
+            if isinstance(msg, AppMsg):
+                msg_session = getattr(msg, 'session_id', None)
+                if msg_session is not None and msg_session != conn.session_id:
+                    print(f"session_id mismatch: msg={msg_session} conn={conn.session_id}, ignoring stale message")
+                    # Mark as delivered even though we're ignoring it, to prevent repeated checks
+                    w_index = wait_index_mac(s_mac, msg_id=msg.id)
+                    if w_index not in NowListener.delivered:
+                        NowListener.delivered.append(w_index)
+                    # Still send ACK to prevent retries, but don't deliver the message
+                    await send_message(
+                        self.__espnow, s_mac, AckMsg(id=msg.id).srlz(), sync=False
+                    )
+                    return True
+
             # filter out retries, don't deliver message with same id
             w_index = wait_index_mac(s_mac, msg_id=msg.id)
             if w_index not in NowListener.delivered:
-                await self.connections[con_id].recv_msg(msg)
+                await conn.recv_msg(msg)
                 NowListener.delivered.append(w_index)
 
             # despite was msg retry or not send ack

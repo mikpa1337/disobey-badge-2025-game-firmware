@@ -479,6 +479,65 @@ class MultiPlayerGameScreen(Screen):
         pass
 ```
 
+### Handling Activity Cancellation
+
+When either badge exits from a multiplayer activity (loading screen or game), send `CancelActivityMsg` to notify the other badge:
+
+```python
+from bdg.msg import CancelActivityMsg
+
+class MultiplayerGameScreen(Screen):
+    def __init__(self, conn: Connection):
+        super().__init__()
+        self.conn = conn
+        self.cancelled = False
+        # Setup game...
+        
+        # Listen for cancellation from other badge
+        self.reg_task(self.read_messages())
+    
+    async def read_messages(self):
+        """Listen for cancellation from other badge"""
+        if not self.conn or not self.conn.active:
+            return
+            
+        try:
+            async for msg in self.conn.get_msg_aiter():
+                # Check msg_type attribute
+                if msg.msg_type == "CancelActivityMsg":
+                    print("Game cancelled by other badge")
+                    self.cancelled = True  # Set BEFORE Screen.back()
+                    # Show message and return to menu
+                    await asyncio.sleep(1)
+                    Screen.back()
+                    return
+                
+                # Process other game messages normally here
+                # (or put back if not needed during this phase)
+        except Exception as e:
+            print(f"Listen error: {e}")
+    
+    def on_hide(self):
+        """Called when screen is hidden - notify other badge"""
+        # Only send if we're initiating the exit (not responding to their cancel)
+        if not self.cancelled and self.conn and self.conn.active:
+            self.cancelled = True  # Set BEFORE sending to prevent race conditions
+            try:
+                msg = CancelActivityMsg()
+                self.conn.send_app_msg(msg, sync=False)
+                print("Sent cancellation to other badge")
+            except Exception as e:
+                print(f"Failed to send cancel: {e}")
+```
+
+**Key Points:**
+- Use `on_hide()` to detect when user exits your screen
+- Send `CancelActivityMsg` to notify the other badge
+- Listen for incoming `CancelActivityMsg` in a background task
+- **Check `msg.msg_type == "CancelActivityMsg"` as a string** (not isinstance)
+- Set `self.cancelled = True` **BEFORE** calling `Screen.back()` or sending message
+- This prevents both badges from sending cancel messages to each other
+
 ## Common Patterns and Utilities
 
 ### Game State Management

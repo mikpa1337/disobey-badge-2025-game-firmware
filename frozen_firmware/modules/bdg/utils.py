@@ -434,6 +434,7 @@ async def new_con_cb(conn, req=False):
                     "wait": 5,
                     "nxt_scr": game_config["screen_class"],
                     "scr_args": screen_args,
+                    "conn": conn,
                 },
             )
         else:

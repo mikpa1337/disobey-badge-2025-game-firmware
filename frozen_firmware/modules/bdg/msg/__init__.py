@@ -129,10 +129,11 @@ class AckMsg(BadgeMsg):
 # Low level message that handle connection link
 @BadgeMsg.register
 class OpenConn(BadgeMsg):
-    def __init__(self, con_id: int, accept: bool = True):
+    def __init__(self, con_id: int, accept: bool = True, session_id: int = None):
         super().__init__()
         self.con_id: int = con_id  # if True  request, if False response
         self.accept: bool = accept  # when replying returns state will other connect
+        self.session_id: int = session_id  # unique session ID to prevent cross-session message routing
 
 
 # Low level message that handle connection link
@@ -156,9 +157,10 @@ class AppMsg(BadgeMsg):
 
     __msg_type_reg = {}
 
-    def __init__(self, content: object, con_id: int = 0):
+    def __init__(self, content: object, con_id: int = 0, session_id: int = None):
         super().__init__()
         self.con_id = con_id
+        self.session_id = session_id  # session ID for message validation
         if isinstance(content, BadgeMsg):
             self.content = content
         elif isinstance(content, dict):
@@ -190,6 +192,13 @@ class RPSMsg(BadgeMsg):
     def __init__(self, choice: int):
         super().__init__()
         self.choice: int = choice
+
+
+@AppMsg.register
+class CancelActivityMsg(BadgeMsg):
+    """Message sent when a badge exits from LoadingScreen or multiplayer game"""
+    def __init__(self):
+        super().__init__()
 
 
 @AppMsg.register
