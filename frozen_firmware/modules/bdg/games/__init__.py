@@ -11,4 +11,6 @@ __all__ = [
     "reaction_solo_game",
     "reaction_multi_game",
     "flashy",
+    "rps",
+    "hackergotchi"
 ]
