@@ -412,7 +412,7 @@ class RpsScreen(Screen):
 def badge_game_config():
     return {
         "con_id": 6,
-        "title": "RPSLS(Dev)",
+        "title": "RPSLS",
         "screen_class": RpsScreen,
         "screen_args": (),
         "multiplayer": True,
