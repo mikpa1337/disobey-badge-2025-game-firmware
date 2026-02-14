@@ -10,6 +10,7 @@ from gui.core.writer import CWriter
 from gui.fonts import font10
 import gui.fonts.arial10 as arial10
 from gui.core.colors import *
+from bdg.games.winner_screen import WinScr
 
 
 # -----------------------------
@@ -359,7 +360,6 @@ class RpsScreen(Screen):
     # Final Winner Screens
     # -----------------------------
     def display_final_winner(self, final_winner):
-        from .winner_screen import WinScr
 
         side = self.game.determine_final_winner()
         if side == "player":
@@ -382,7 +382,6 @@ class RpsScreen(Screen):
         )
 
     def display_final_winner_remote(self, winner):
-        from .winner_screen import WinScr
 
         my_nick = Config.config["espnow"]["nick"]
 
