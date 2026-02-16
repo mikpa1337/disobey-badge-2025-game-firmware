@@ -12,5 +12,7 @@ __all__ = [
     "reaction_multi_game",
     "flashy",
     "rps",
-    "hackergotchi"
+    "hackergotchi",
+    "vibedemo",
+    "cutefox"
 ]
